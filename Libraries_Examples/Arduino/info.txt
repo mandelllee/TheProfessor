@@ -1,0 +1,44 @@
+Hardware changes
+================
+GPIO25 connected to SD card's CD pin through 330 Om resistor
+
+DHT22
+======
+Used libraries: 
+	SimpleDHT sensors library
+	
+DS18B20
+=======
+Sensors are connected to J10 port.
+Currently there is 5k6 pull-up resistor for data line. 4k7 resistor is recommended.
+Used libraries:
+	Arduino-Temperature-Control-Library
+	OneWire 2.3 or newer (library included in arduino 1.7.8 does not support ESP32)
+	
+HX711
+======
+Connect sensor to U6 for using with example sketch
+Used libraries:
+	HX711
+	
+ISL29125
+========
+Board has it's own I2C pull up resistors. These could be disabled by cutting traces on the board
+Used libraries:
+	ISL29125_Breakout_Arduino_Library-master_modified
+		Wire.begin() was removed from RGB_sensor.init() function. This prevents using default I2C port on pins 20, 21.
+		
+TSL2561
+=======
+Board has it's own I2C pull up resistors.
+Used libraries:
+	TSL2561-Arduino-Library-master-modified
+		Wire.begin() was removed from begin() function. This prevents using default I2C port on pins 20, 21.
+		
+SD card
+=======
+Hardware changes: GPIO25 connected to SD card's CD pin through 330 Om resistor
+Used libraries
+	ESP32 SD (modified). Do not use SD_MMC - this library is not for SPI mode.
+		remove spi.begin() from SD.cpp -> SDFS::begin(). This prevents using default SPI port.
+		SD.cpp location: ....\arduino-1.7.8\hardware\espressif\arduino-esp32\libraries\SD\src\SD.cpp

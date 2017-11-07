@@ -1,0 +1,63 @@
+The current backend is a simple Restful API which runs on node.js platform.  I have not actually taken a look at the code myself, but since it's just a RESTful design, the particular backend implementation doesn't matter. Just as long as you can send and get JSON data using the HTTP protocol with any client such as curl. 
+
+Here is all the API information I was sent about the backend. We can modify it needed.
+
+Here are the API calls to get data.
+
+http://api-quadroponic.rhcloud.com/v1/report/currentConditions/:nodename
+Gets the current condition for a given node
+
+http://api-quadroponic.rhcloud.com/v1/report/environment/:nodename
+Gets the last 1000 record for a given node of just the environmental conditions (LUX, Temp and humidity)
+
+The lesser used ones are
+http://api-quadroponic.rhcloud.com/v1/report/water/:nodename
+Gets the last 1000 record for a given node of just the water conditions (pH, EC and water temp)
+
+http://api-quadroponic.rhcloud.com/v1/report/soil/:nodename
+Gets the last 1000 record for a given node of just the soil conditions
+
+The current nodenames with data are:
+EastVillage
+FarmOne
+piruWestGR1
+piruWestGR2
+piruNorthGR3a
+piruNorthGR3b
+piruNorthGR3c
+ESP32DEV
+
+Here is the API for posting data using POST command. ESP32DEV
+The url for posting to the mongodb we are using is: http://api-quadroponic.rhcloud.com/v1/record/sensordata
+
+http://api-quadroponic.rhcloud.com/v1/report/environment/ESP32DEV
+
+http://api-quadroponic.rhcloud.com/v1/report/currentConditions/:nodename
+{"hostname":"EastVillage","date":"2017-10-25 T16:03:25.036Z","light_lux":"1198","air_humidity":"41.20","air_temp_f_dht":"78.62"}
+{"hostname":"EastVillage","date":"2017-10-25 T15:53:24.558Z","light_lux":"792","air_humidity":"40.90","air_temp_f_dht":"78.98"}
+
+{"hostname":"ESP32DEV","date":"2017-10-25T15:00:51.164Z"}
+
+
+{"hostname":"ESP32DEV", 
+"core_version":"0.1", 
+"now":"1508949067", 
+"firmware":"filename", 
+"environment":
+{"light":{"lux":4681}, 
+"light-rgb":{"red":255,"green":255,"blue":255}, 
+"air-1":{"humidity":43,"temp":87}, 
+"air-2":{"humidity":41.1,"temp":87},
+"co2":{"k30":1350,"mg811":400}
+}, 
+
+"other":{"analog_1":99,"analog_2":550,"analog_3":5.7,"analog_4":1063,"gpio_1":87,"gpio_2":0,"i2c_1":500,"i2c_2":0,"battery":55}}
+
+
+
+{"hostname":"ESP32DEV","core_version":"0.1","now":"1508949067","firmware":"filename","environment":{},"other":"xxx"}
+{"hostname":"ESP32DEV","core_version":"0.1","now":"1508949067","firmware":"filename","environment":{"light":0,"light-rgb":0,"air-1":0,"air-2":0,"co2":0},"other":{"analog_1":99,"analog_2":550,"analog_3":5.7,"analog_4":1063,"gpio_1":87,"gpio_2":0,"i2c_1":500,"i2c_2":0,"battery":55}}
+
+{"hostname":"ESP32DEV","core_version":"0.1","now":"1508949067","firmware":"filename","environment":{"light":{"lux":4681},"light-rgb":{"red":255,"green":255,"blue":255},"air-1":{"humidity":43,"temp":87},"air-2":{"humidity":43,"temp":87}},"other":{"analog_1":99,"analog_2":550,"analog_3":5.7,"analog_4":1063,"gpio_1":87,"gpio_2":0,"i2c_1":500,"i2c_2":0,"battery":55}}
+
+

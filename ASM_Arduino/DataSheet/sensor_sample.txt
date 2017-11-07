@@ -1,0 +1,40 @@
+{
+	"hostname": "ESP32DEV",
+	"core_version": "0.1",
+	"now": "1502467659", // unix time stamp
+	"firmware": "filename", // The name of firwmware file
+	
+	"environment": {
+		"light": {
+			"lux": 4681
+		},
+		"light-rgb": {
+			"red": 255,
+			"green": 255,
+			"blue": 255
+		},
+		"air-1": {
+			"humidity": 43,		// *Humidity (40% - 50%)
+			"temp": 87 			// *Temperature in deg F (68 - 79)
+		},
+		"air-2": {
+			"humidity": 41.1,
+			"temp": 87
+		},
+		"co2": {
+			"k30": 1350,		// *CO2 ppm (1200-1500)
+			"mg811": 400
+		}
+	},
+	"other": {
+		"analog_1": 99,		// Moisture sensor
+		"analog_2": 550, 	// *PAR (0 - 700)
+		"analog_3": 5.7,	// *pH 5.7 (5.5 - 6.5)
+		"analog_4": 1063,	// *Reservoir PPM (1000 - 1100)
+		"gpio_1": 87, // waterproof temperature sensor
+		"gpio_2": 0,
+		"i2c_1": 500, // loadcell amplifier value
+		"i2c_2": 0,
+		"battery": 55 // the battery level between 0 and 100 %
+	}
+}
