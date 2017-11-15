@@ -169,7 +169,7 @@ uint8_t SFE_ISL29125::read8(uint8_t reg)
   Wire.beginTransmission(_addr);
   Wire.requestFrom(_addr,(uint8_t)1);
   uint8_t data = Wire.read();
-  Wire.endTransmission();
+  //Wire.endTransmission();
   
   return data;
 }
@@ -198,7 +198,7 @@ uint16_t SFE_ISL29125::read16(uint8_t reg)
   Wire.requestFrom(_addr, (uint8_t)2); // request 2 bytes of data
   data = Wire.read();
   data |= (Wire.read() << 8);
-  Wire.endTransmission();
+  //Wire.endTransmission();
 
   return data;
 }

@@ -43,7 +43,6 @@
 #else
  #include <WProgram.h>
 #endif
-
 #include <Wire.h>
 
 #define TSL2561_VISIBLE 2                   // channel 0 - channel 1
@@ -163,20 +162,20 @@ tsl2561Gain_t;
 class TSL2561 {
  public:
   TSL2561(uint8_t addr);
-  bool begin(void);
-  bool enable(void);
-  bool disable(void);
-  bool write8(uint8_t reg, uint8_t data);
-  bool read8(uint8_t reg, uint8_t* data);
-  bool read16(uint8_t reg, uint16_t* data);
+  boolean begin(void);
+  void enable(void);
+  void disable(void);
+  void write8(uint8_t r, uint8_t v);
+  uint16_t read16(uint8_t reg);
+
   uint32_t calculateLux(uint16_t ch0, uint16_t ch1);
-  bool setTiming(tsl2561IntegrationTime_t integration);
-  bool setGain(tsl2561Gain_t gain);
+  void setTiming(tsl2561IntegrationTime_t integration);
+  void setGain(tsl2561Gain_t gain);
   uint16_t getLuminosity (uint8_t channel);
-  uint32_t getFullLuminosity();
+  uint32_t getFullLuminosity ();
 
  private:
-  uint8_t _addr;
+  int8_t _addr;
   tsl2561IntegrationTime_t _integration;
   tsl2561Gain_t _gain;
 

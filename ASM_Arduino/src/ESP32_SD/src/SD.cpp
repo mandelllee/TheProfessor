@@ -28,19 +28,20 @@ bool SDFS::begin(uint8_t ssPin, SPIClass &spi, uint32_t frequency, const char * 
         return true;
     }
 	
-    spi.begin();
+    //spi.begin();
 
     _pdrv = sdcard_init(ssPin, &spi, frequency);
 	if(_pdrv == 0xFF) {
+		sdcard_uninit(_pdrv);
         return false;
     }
 
     if(!sdcard_mount(_pdrv, mountpoint)){
-		sdcard_unmount(_pdrv);//sdcard_uninit(_pdrv);
+		sdcard_unmount(_pdrv);
         _pdrv = 0xFF;
         return false;
     }
-
+	
     _impl->mountpoint(mountpoint);
     return true;
 }
