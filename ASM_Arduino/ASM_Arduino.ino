@@ -1528,6 +1528,8 @@ uint16_t ReadCO2_K30_uart(void)
     Serial.print("\r\nK30 CO2: error");}
   else {
     Serial.printf("\r\nK30 CO2: %d ppm", co2_value);}
+
+  return co2_value;
 }
 
 uint16_t ReadCO2_K30_i2c(void)
