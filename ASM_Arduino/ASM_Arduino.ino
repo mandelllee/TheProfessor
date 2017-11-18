@@ -1262,7 +1262,7 @@ void Read_LoadCell(HX711 lcStruct, pLoadCell SensStruct)
 void Read_DS18B20(void)
 {
   sensors.requestTemperatures();
-  printData(insideThermometer);
+  //printData(insideThermometer);
   printData(outsideThermometer);
 }
 
@@ -1323,7 +1323,7 @@ void Sensors_Read(void)
   Read_LoadCell(lc_2, &(Sensors.LoadCell_2));  
   
   // Read DS18B20
-  //Read_DS18B20();
+  Read_DS18B20();
 
   // Read Analog (AIN1-AIN6) inputs, Rdiv = 2
   Sensors.AIN[0] = adc1_to_voltage(ADC1_CHANNEL_6, &characteristics) * 2;
@@ -1473,10 +1473,13 @@ void printAddress(DeviceAddress deviceAddress)
 void printTemperature(DeviceAddress deviceAddress)
 {
   float tempC = sensors.getTempC(deviceAddress);
+  float tempF = DallasTemperature::toFahrenheit(tempC);
+  Sensors.DS18B20_Temp_F = tempF;
+  
   Serial.print("Temperature: ");
   Serial.print(tempC);
   Serial.print("°C / ");
-  Serial.print(DallasTemperature::toFahrenheit(tempC));
+  Serial.print(tempF);
   Serial.print("°F");
 }
 // function to print a device's resolution
