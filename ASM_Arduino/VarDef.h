@@ -1,6 +1,7 @@
 #ifndef VARDEF_h
 #define VARDEF_h
 
+//#define DebugMode
 
 #define Version         0.1
 
@@ -25,23 +26,39 @@
 //Define GPIO used by SD card in SPI mode
 #define SD_CLK          14
 #define SD_CMD          15
-#define SD_DATA         13  // be careful !!!
+#define SD_DATA         13
 #define SD_CD           25
-#define I2C_speed       100000
+
 
 // Select pins for K30
-#define SERIAL1_RXPIN 16
-#define SERIAL1_TXPIN 17
+#define SERIAL1_RXPIN 17//16
+#define SERIAL1_TXPIN 16//17
+
+// Declare I2C speed
+#define I2C_speed       100000
 
 // Declare I2C for Sensors and LCD pins
-#define Sens_SDA_PIN    26
-#define Sens_SCL_PIN    27
-#define LCD_SDA_PIN     Sens_SDA_PIN
-#define LCD_SCL_PIN     Sens_SCL_PIN
+#define I2C_SDA_PIN    26
+#define I2C_SCL_PIN    27
+#define LCD_SDA_PIN     I2C_SDA_PIN
+#define LCD_SCL_PIN     I2C_SCL_PIN
 
-#define MCP23008_add    0x27
-#define SSD1306_add     0x78
-#define K30co2Addr      0x68
+// I2C devices addresses
+#define MCP23008_add      0x27
+#define SSD1306_add       0x3C
+#define K30co2_addr       0x68
+//TCS34725 (RGB sensor)   0x29
+//TSL2561 (LUX sensor)    0x29(Low) / 0x39(Float) / 0x49(High - default)
+
+// Choose which RGB sensor is connected
+#define TCS34725
+//#define ISL29125
+
+//Bluetooth module pin definitions
+#define BLE_BRK_PIN       2
+#define BLE_STATE_PIN     5
+#define BLE_RX_PIN        4
+#define BLE_TX_PIN        13
 
 // Declare DS18B20 pin and precision
 #define ONE_WIRE_BUS            23
@@ -49,23 +66,25 @@
 
 // Declare pinDHT22 pins
 #define pinDHT22_1      22
-#define pinDHT22_2      18    // error in hardware !!!
+#define pinDHT22_2      18
 
-// Declare LoadCells pins
-#define pinDOUT_LC1     5     // be careful !!!
-#define pinPD_SCK_LC1   4
-#define pinDOUT_LC2     21    
-#define pinPD_SCK_LC2   19
+// Declare LoadCell pins
+#define pinDOUT_LC      21    
+#define pinPD_SCK_LC    19
 
 #define V_REF   1100  // ADC reference voltage
 
-#define Sens_ENPin      5
-#define LCD_ENPin       6
+// Port expander pins
+#define Sens_ENPin      6
+#define LCD_ENPin       5
+#define LED_ONPin       7
 
 #define Sens_ON         MCP23008_SetLevel(Sens_ENPin, 0)    //mcp.digitalWrite(5, LOW);
 #define Sens_OFF        MCP23008_SetLevel(Sens_ENPin, 1)    //mcp.digitalWrite(5, HIGH);
-#define LCD_ON          MCP23008_SetLevel(LCD_ENPin, 0)     //mcp.digitalWrite(6, LOW);
-#define LCD_OFF         MCP23008_SetLevel(LCD_ENPin, 1)     //mcp.digitalWrite(6, HIGH);
+#define LCD_ON          MCP23008_SetLevel(LCD_ENPin, 0)
+#define LCD_OFF         MCP23008_SetLevel(LCD_ENPin, 1)
+#define LED_ON          MCP23008_SetLevel(LED_ONPin, 1)    
+#define LED_OFF         MCP23008_SetLevel(LED_ONPin, 0)
 
 // Default Values for SysSettings
 #define DefaultVal_ssid                   "WiFi_SSDI"
@@ -80,7 +99,7 @@ typedef struct {
   String    password;
   String    hostname;
   String    url;
-  uint16_t  Meas_RepeatTime_s;   // Measurments repeatition in minutes
+  uint16_t  Meas_RepeatTime_s;   // Measurments repeatition in seconds
   uint16_t  BLE_Timout_s;        // Bluetooth active time in seconds
   float     ver;
   volatile uint32_t UnixTimeStamp;  
@@ -121,13 +140,12 @@ typedef struct {
   DHT22_t     	DHT22_2;
   TLS2561_t   	TLS2561;
   ISL29125_t  	ISL29125;
-  LoadCell_t	  LoadCell_1;
-  LoadCell_t	  LoadCell_2;
+  LoadCell_t	  LoadCell;
   float         DS18B20_Temp_F;
   uint16_t      co2_k30;
-  uint32_t      co2_mg811;
-  uint32_t      AIN[6];
-  uint32_t      BatVoltage;
+  uint16_t      co2_mg811;
+  uint16_t      AIN[6];
+  uint16_t      BatVoltage;
   uint32_t      counter;
 } Sensors_t;
 

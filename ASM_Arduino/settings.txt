@@ -1,0 +1,6 @@
+ssid: Advertus
+password: rainas%8Katinas9
+hostname: ESP32DEV
+url: http://api-quadroponic.rhcloud.com/v1/record/sensordata
+Meas_Repeat_s: 30
+BLE_Timout_s: 120

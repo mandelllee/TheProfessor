@@ -1,4 +1,9 @@
+/*  ASM - Atmospheric Sensor Module
+ *  Revision 2.0
+ * */
+
 #include <string.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <WiFi.h>
@@ -16,17 +21,17 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <bt.h>
-#include "FS.h"
 #include "SPI.h"
-#include <SimpleDHT.h>
+#include "SD.h"
+#include "FS.h"
 
 /* Modified libraries */
-#include "src/ESP32_SD/src/SD.h"
+#include "src/Adafruit_TCS34725-master/Adafruit_TCS34725.h"
 #include "src/TSL2561_Arduino_Library/TSL2561.h"
 #include "src/SparkFun_ISL29125_Breakout/src/SparkFunISL29125.h"
 #include "src/Adafruit_MCP23008_library/Adafruit_MCP23008.h"
 #include "src/HX711/HX711.h"
-
+#include "src/SimpleDHT/SimpleDHT.h"
 /* User includes */
 #include "VarDef.h"
 #include "images.h"
@@ -39,10 +44,10 @@ Sensors_t Sensors;
 SimpleDHT22 dht22;
 HTTPClient http;
 Adafruit_MCP23008 mcp;
-TSL2561 tsl(TSL2561_ADDR_HIGH);
-HX711 lc_1(pinDOUT_LC1, pinPD_SCK_LC1);
-HX711 lc_2(pinDOUT_LC2, pinPD_SCK_LC2);
-SSD1306  display((SSD1306_add>>1), LCD_SDA_PIN, LCD_SCL_PIN);
+TSL2561 tsl(TSL2561_ADDR_HIGH);//
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+HX711 LoadCell(pinDOUT_LC, pinPD_SCK_LC);
+SSD1306  display(SSD1306_add, LCD_SDA_PIN, LCD_SCL_PIN);
 OneWire oneWire(ONE_WIRE_BUS);
 BLECharacteristic *pCharacteristic;
 BLEService *pService;
@@ -63,6 +68,9 @@ SPIClass &spi = SPI;
 DallasTemperature sensors(&oneWire);
 DeviceAddress insideThermometer, outsideThermometer;
 HardwareSerial Serial1(1);
+char SerialBuffer[200];
+uint8_t SerialBufferCnt=0;
+
 
 /* Functions prototype *****************************************************/
 void GPIO_Config(void);
@@ -75,7 +83,7 @@ void DHT22_Config(void);
 void DS18B20_Config(void);
 void HX711_Config(void);
 void SSD1306_Init(void);
-void Send_json(void);
+void DataToJSON(void);
 void Sensors_Read(void);
 void Read_DHT22(pDHT22 SensStruct);
 void Read_ISL29125(pISL29125 SensStruct);
@@ -99,24 +107,31 @@ void I2C_Recovery(void);
 void I2C_TestLine(void);
 void MCP23008_SetLevel(uint8_t pin, uint8_t level);
 
+
 /*******************************************************************************
  * BLE Callbacks
  ******************************************************************************/
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
-      Serial.print("\r\n*** BLE connected");
+      #ifdef DebugMode
+        Serial.print("\r\n*** BLE connected");
+      #endif
       BLE_TimeOutCounter = 0;
       deviceConnected = true;
     };
 
     void onDisconnect(BLEServer* pServer) {
-      Serial.print("\r\n*** BLE disconnected");
+      #ifdef DebugMode
+        Serial.print("\r\n*** BLE disconnected");
+      #endif
       deviceConnected = false;
     }
 };
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
-      Serial.print("\r\n*** BLE received data");
+      #ifdef DebugMode
+        Serial.print("\r\n*** BLE received data");
+      #endif
       BLE_TimeOutCounter = 0;
       std::string rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) 
@@ -156,48 +171,70 @@ void IRAM_ATTR onTimer()
  ******************************************************************************/
 void setup() 
 {
-  // Initialize UART for terminal
+  // Initialize UART for terminal (COM PORT)
   Serial.begin(115200);
   
   // Initialize UART1 for K30
   Serial1.begin(9600, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
 
   // Initialize I2C
-  Wire.begin(Sens_SDA_PIN, Sens_SCL_PIN);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(I2C_speed); // Set I2C speed to 100KHz
+
+    // Initialize Port Expander
+  MCP23008_Config();
+  // Enable Sens_EN and LCD_EN
+  Sens_ON;
+  LCD_ON;
+  LED_OFF;
+  
   delay(100);
   I2C_TestLine();
   delay(100);
 
-  // Configure SPI pins
+  // Configure SPI pins for SD card
   spi.begin(SD_CLK, SD_DATA, SD_CMD);
 
   delay(500);
   
-  // Load system parameters
+  // Load system parameters - load from EEPROM
   Load_SysSettings();
 
-  // Connect to SD card and read systings.txt
+  // Connect to SD card and read settings.txt
   SD_connect();
   SD_read_settings();
 
-  Serial.print("\r\n\r\n*** Peripherals state *******************************************"); 
+  #ifdef DebugMode
+    Serial.print("\r\n\r\n*** Peripherals state *******************************************"); 
+  #endif
   GPIO_Config();
   ADC_Config();
 
-  // Initialize Port Expander
-  MCP23008_Config();
+  pinMode(BLE_BRK_PIN,OUTPUT);
+  pinMode(BLE_STATE_PIN,OUTPUT);
+  pinMode(BLE_RX_PIN,INPUT);
+  pinMode(BLE_TX_PIN,OUTPUT);
+  digitalWrite(BLE_STATE_PIN,0);
+  digitalWrite(BLE_TX_PIN,0);
 
+
+
+  
   // Read Battery Voltage before Sensors Measurements
   Read_VBat();
 
-  // Enable Sens_EN and LCD_EN
-  Sens_ON;
-  LCD_ON;
+
+  
   delay(500);
 
-  SSD1306_Init();           // Attention this function is changing I2C speed to 700kHz
+  // Initialize OLED Display
+  SSD1306_Init();           // Attention this function changing I2C speed to 700kHz
   Wire.setClock(I2C_speed); // Set I2C speed to 100KHz
-  
+
+    // Draw WiFi image
+//  drawImageDemo();
+//  display.display();
+ 
   // Configure sensors
   Sensors_Init();
   
@@ -205,18 +242,15 @@ void setup()
   //BLE_init();
   //BLE_enable();
   
-  // Configure and start time
+  // Configure and start timer
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 1000000, true);  // value in microseconds
   timerAlarmEnable(timer);
 
-  // Draw WiFi demo
-  drawImageDemo();
-  display.display();
-
   // Turn OFF test LED
   gpio_set_level(GPIO_NUM_2,0);
+  Sens_ON;
 }
 
 
@@ -227,6 +261,7 @@ void setup()
  ******************************************************************************/
 void loop() 
 {
+  static uint8_t a=1,b=0;
 /*  //-----------------------------------------------------------------------
   // Decode BLE messages
   if (BLE_DecodeFlag == true)
@@ -234,89 +269,54 @@ void loop()
     //BLE_decode(rxValue);
     BLE_DecodeFlag = false;
   }*/
-  
 
   //-----------------------------------------------------------------------
   // Read Sensors and send data in json via WiFi
   if (Sensors_ReadFlag == true)
   {
     display.clear();
-    
+  
     // Turn ON test LED
     gpio_set_level(GPIO_NUM_2,1);
 
-    //--- Read Data from Sensors
+    // Read Data from Sensors
     Sensors_Read();
 
-    //--- LCD display Data
+    // LCD display Data
     DisplayData();
-    
-    //--- Connect to WiFi
-    uint8_t len1 = SysSettings.ssid.length()+1;
-    uint8_t len2 = SysSettings.password.length()+1;
-    char ssid[len1]={0};
-    char password[len2]={0};
-    SysSettings.ssid.toCharArray(ssid, len1);
-    SysSettings.password.toCharArray(password, len2);
-    WiFi.begin((const char*)ssid, (const char*)password); 
-    Serial.print("\r\n\r\n*** Connecting to WiFi");
-    for (uint8_t ConnectTimeOut=0; ConnectTimeOut<30 ;ConnectTimeOut++)
-    {
-      if(WiFi.status() == WL_CONNECTED) {
-        break;}
-      Serial.print(".");
-      delay(250);
-    }
 
-    //--- Send json if connected
-    if(WiFi.status() == WL_CONNECTED) 
-    {
-      display.drawString(0, 50, "WIFI OK");
-      display.display();  
-      Serial.print("connected");
-      // Send Sensors data in json message, after sending save in SD card
-      Send_json();
-    }
-    else {
-      display.drawString(0, 50, "WIFI ERR");
-      display.display(); 
-      Serial.printf("error %d", WiFi.status());}
-  
-    //--- Disconnect WiFi (Erases SSID/password)
-    WiFi.disconnect(true);
+    // Save sensors data to SD card in Json format and send to server
+    DataToJSON();
 
-    // Turn ON test LED
+    // Turn OFF test LED
     gpio_set_level(GPIO_NUM_2,0);
-    
     // Reset Sensors_ReadFlag
     Sensors_ReadFlag = false;
   }
 
 
-  // Receive Settings
+  //-----------------------------------------------------------------------
+  // COM PORT Data Receive
   if (Serial.available() > 0)
   {
-    char SerialBuffer[200]={0};
-    uint16_t SerialBufferCnt=0;
+    SerialBufferCnt=0;
     while (Serial.available() > 0) 
     {
       SerialBuffer[SerialBufferCnt] = Serial.read();
       if (SerialBuffer[SerialBufferCnt] == '\r') {
         DecodeTextLine(SerialBuffer, SerialBufferCnt);
+        SerialBufferCnt = 0;
       }
-      SerialBufferCnt++;
-      if (SerialBufferCnt >= 198) {
-        SerialBufferCnt=0;
+      if (SerialBufferCnt < 198) {
+        SerialBufferCnt++;
       }
     }
   }
-
-  
 }
 
 
 /*******************************************************************************
- * Load_SysSettings - Load system parameters
+ * DisplayData - Display sensors data
  ******************************************************************************/
 void DisplayData(void)
 {
@@ -329,7 +329,7 @@ void DisplayData(void)
   
   sprintf(str, "D2 %5.2f RH %5.2f F", Sensors.DHT22_2.Humidity_RH, Sensors.DHT22_2.Temperature_F);
   display.drawString(0, 10, str);
-
+  
   sprintf(str, "CO2 %d ppm", Sensors.co2_k30);
   display.drawString(0, 20, str);
 
@@ -360,14 +360,16 @@ void Load_SysSettings(void)
   SysSettings.UnixTimeStamp = 1502467659;
   
   // Print system parameters
-  Serial.print("\r\n*** System parameters *******************************************");
-  Serial.print("\r\nWiFi SSID: "); Serial.print(SysSettings.ssid);
-  Serial.print("\r\nWiFi password: "); Serial.print(SysSettings.password);
-  Serial.print("\r\nHostname: "); Serial.print(SysSettings.hostname);
-  Serial.print("\r\nURL: "); Serial.print(SysSettings.url);
-  Serial.printf("\r\nMeas_RepeatTime_s: %d", SysSettings.Meas_RepeatTime_s);
-  Serial.printf("\r\nBLE_Timout_s: %d", SysSettings.BLE_Timout_s);
-  Serial.printf("\r\nVersion: %.2f", SysSettings.ver);
+  #ifdef DebugMode
+    Serial.print("\r\n*** System parameters *******************************************");
+    Serial.print("\r\nWiFi SSID: "); Serial.print(SysSettings.ssid);
+    Serial.print("\r\nWiFi password: "); Serial.print(SysSettings.password);
+    Serial.print("\r\nHostname: "); Serial.print(SysSettings.hostname);
+    Serial.print("\r\nURL: "); Serial.print(SysSettings.url);
+    Serial.printf("\r\nMeas_RepeatTime_s: %d", SysSettings.Meas_RepeatTime_s);
+    Serial.printf("\r\nBLE_Timout_s: %d", SysSettings.BLE_Timout_s);
+    Serial.printf("\r\nVersion: %.2f", SysSettings.ver);
+  #endif
 }
 
 
@@ -378,22 +380,27 @@ bool SD_connect(void)
 {
   if (SD.begin(SD_CD, spi, 2000000) == true)
   {
-    Serial.print("\r\n\r\n*** SD Card Type: ");
     cardType = SD.cardType();
     if(cardType = !CARD_NONE)
     {
-      if(cardType == CARD_MMC)        Serial.print("MMC");
-      else if(cardType == CARD_SD)    Serial.print("SDSC");
-      else if(cardType == CARD_SDHC)  Serial.print("SDHC");
-      else                            Serial.print("UNKNOWN");
       cardSize = SD.cardSize() / (1024 * 1024);
-      Serial.printf(" Size: %lluMB", cardSize);
+      #ifdef DebugMode
+        Serial.print("\r\n\r\n*** SD Card Type: ");
+        if(cardType == CARD_MMC)        Serial.print("MMC");
+        else if(cardType == CARD_SD)    Serial.print("SDSC");
+        else if(cardType == CARD_SDHC)  Serial.print("SDHC");
+        else                            Serial.print("UNKNOWN");
+        Serial.printf(" Size: %lluMB", cardSize);
+      #endif
       return true;
     }
   }
   SD.end();
-    
-  Serial.print("\r\n\r\n*** SD card not attached");
+
+  #ifdef DebugMode
+    Serial.print("\r\n\r\n*** SD Card Type: ");
+    Serial.print("\r\n\r\n*** SD card not attached");
+  #endif
   return false;
 }
 
@@ -409,26 +416,25 @@ void SD_read_settings(void)
     File file = SD.open("/settings.txt");
     if(!file)
     {
-      Serial.print("\r\n*** Failed to open settings.txt file");
+      #ifdef DebugMode
+        Serial.print("\r\n*** Failed to open settings.txt file");
+      #endif
       return;
     }
 
     // read file
-    char text[200];   // max symbols in one line
+    static char text[200];   // max symbols in one line
     uint8_t cnt=0;  
     while(file.available())
     {
-      if (cnt >= 198)
-      {
+      if (cnt >= 198) {
         file.close();
         Serial.print("\r\n*** Failed to read settings.txt file to big!!");
         return;
       }
       
-      char symbol = file.read();
-      text[cnt] = symbol;  
-      if (symbol == '\n')
-      {
+      text[cnt] = file.read();;  
+      if (text[cnt] == '\n') {
           DecodeTextLine(text, cnt);
           cnt = 0;
       }
@@ -443,7 +449,7 @@ void SD_read_settings(void)
 
 void I2C_TestLine(void)
 {
-  if (digitalRead(Sens_SDA_PIN) == 0) {
+  if (digitalRead(I2C_SDA_PIN) == 0) {
     I2C_Recovery();
   }
 }
@@ -453,27 +459,28 @@ void I2C_TestLine(void)
  ******************************************************************************/
 void I2C_Recovery(void)
 {
+
  Serial.print("\r\n*** I2C recovery begin");
  
   // Stop I2C
   //Wire.end();
 
   // Set gpio mode
-  pinMode(Sens_SCL_PIN, OUTPUT);
+  pinMode(I2C_SCL_PIN, OUTPUT);
   //pinMode(Sens_SDA_PIN, INPUT);
 
   // Send clock for recovery
   for (uint8_t cycle=0; cycle<16; cycle++)
   {
-    digitalWrite(Sens_SCL_PIN, LOW);
+    digitalWrite(I2C_SCL_PIN, LOW);
     delay(10);
-    digitalWrite(Sens_SCL_PIN, HIGH);
+    digitalWrite(I2C_SCL_PIN, HIGH);
     //if (digitalRead(Sens_SDA_PIN)){
     //  break;}
   }
  
   // Initialize I2C again
-  Wire.begin(Sens_SDA_PIN, Sens_SCL_PIN);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(I2C_speed);
 }
 
@@ -495,7 +502,10 @@ void DecodeTextLine(char* line, uint8_t QLen)
       preferences.begin("my-app", false);
       preferences.putString("ssid", SysSettings.ssid);
       preferences.end();
-      Serial.print("\r\n*** New WiFi SSID: ");Serial.print(SysSettings.ssid);
+      #ifdef DebugMode
+        Serial.print("\r\n*** New WiFi SSID: ");
+        Serial.print(SysSettings.ssid);
+      #endif
     }
   }
 
@@ -510,7 +520,10 @@ void DecodeTextLine(char* line, uint8_t QLen)
       preferences.begin("my-app", false);
       preferences.putString("password", SysSettings.password);
       preferences.end();
-      Serial.print("\r\n*** New WiFi password: ");Serial.print(SysSettings.password);
+      #ifdef DebugMode
+        Serial.print("\r\n*** New WiFi password: ");
+        Serial.print(SysSettings.password);
+      #endif
     }
   }
 
@@ -525,7 +538,10 @@ void DecodeTextLine(char* line, uint8_t QLen)
       preferences.begin("my-app", false);
       preferences.putString("hostname", SysSettings.hostname);
       preferences.end();
-      Serial.print("\r\n*** New Hostname: ");Serial.print(SysSettings.hostname);
+      #ifdef DebugMode
+        Serial.print("\r\n*** New Hostname: ");
+        Serial.print(SysSettings.hostname);
+      #endif
     }
   }
   
@@ -540,7 +556,10 @@ void DecodeTextLine(char* line, uint8_t QLen)
       preferences.begin("my-app", false);
       preferences.putString("url", SysSettings.url);
       preferences.end();
-      Serial.print("\r\n*** New URL: ");Serial.print(SysSettings.url);
+      #ifdef DebugMode 
+        Serial.print("\r\n*** New URL: ");
+        Serial.print(SysSettings.url);
+      #endif
     }
   }
   
@@ -554,7 +573,10 @@ void DecodeTextLine(char* line, uint8_t QLen)
       preferences.begin("my-app", false);
       preferences.putUInt("MeasRepeat", SysSettings.Meas_RepeatTime_s);
       preferences.end();
-      Serial.print("\r\n*** New Meas_RepeatTime_s: ");Serial.print(SysSettings.Meas_RepeatTime_s);
+      #ifdef DebugMode
+        Serial.print("\r\n*** New Meas_RepeatTime_s: ");
+        Serial.print(SysSettings.Meas_RepeatTime_s);
+      #endif
     }
   }
 
@@ -568,7 +590,10 @@ void DecodeTextLine(char* line, uint8_t QLen)
       preferences.begin("my-app", false);
       preferences.putUInt("BLEtimeout", SysSettings.BLE_Timout_s);
       preferences.end();
-      Serial.print("\r\n*** New BLE_Timout_s: ");Serial.print(SysSettings.BLE_Timout_s);
+      #ifdef DebugMode
+        Serial.print("\r\n*** New BLE_Timout_s: ");
+        Serial.print(SysSettings.BLE_Timout_s);
+      #endif
     }
   }
 }
@@ -579,7 +604,9 @@ void DecodeTextLine(char* line, uint8_t QLen)
  ******************************************************************************/
 void BLE_enable(void)
 {
-  Serial.print("\r\n*** BLE enable"); 
+  #ifdef DebugMode
+    Serial.print("\r\n*** BLE enable"); 
+  #endif
   esp_bt_controller_enable(ESP_BT_MODE_BTDM);
   delay(100);
   pServer->getAdvertising()->start(); 
@@ -587,7 +614,9 @@ void BLE_enable(void)
 }
 void BLE_disable(void)
 {
-  Serial.print("\r\n*** BLE disable");  
+  #ifdef DebugMode
+    Serial.print("\r\n*** BLE disable");  
+  #endif
   pServer->getAdvertising()->stop();  
   esp_bt_controller_disable();
   BLE_Status = 0;
@@ -938,10 +967,10 @@ void ADC_Config(void)
 
   // Calibrate ADC
   esp_adc_cal_get_characteristics(V_REF, ADC_ATTEN_DB_6, ADC_WIDTH_BIT_11, &characteristics);
-  Serial.print("\r\nADC offset: "); 
-  Serial.print(characteristics.offset); Serial.print("mV, ideal_offset: "); 
-  Serial.print(characteristics.ideal_offset); Serial.print("mV");
-  //adc2_vref_to_gpio(GPIO_NUM_25); // To measure Vref 1.1V on 25,26,27 pins
+  #ifdef DebugMode
+    Serial.print("\r\nADC offset: "); Serial.print(characteristics.offset); 
+    Serial.print("mV, ideal_offset: "); Serial.print(characteristics.ideal_offset); Serial.print("mV");
+  #endif 
 }
 
 
@@ -951,7 +980,9 @@ void ADC_Config(void)
  ******************************************************************************/
 void MCP23008_Config(void)
 {
-  Serial.print("\r\n*** MCP23008 configuration"); 
+  #ifdef DebugMode
+    Serial.print("\r\n*** MCP23008 configuration"); 
+  #endif 
   mcp.begin(MCP23008_add);
  
   mcp.pullUp(0, HIGH);
@@ -969,6 +1000,9 @@ void MCP23008_Config(void)
   mcp.pinMode(4, OUTPUT);
   mcp.pinMode(5, OUTPUT);
   mcp.pinMode(6, OUTPUT); 
+  mcp.pinMode(7, OUTPUT); 
+
+  mcp.digitalWrite(7,0);
 }
 
 void MCP23008_SetLevel(uint8_t pin, uint8_t level)
@@ -999,17 +1033,47 @@ bool ISL29125_Config(void)
   {
     RGB_sensor.config(CFG1_MODE_RGB|CFG1_10KLUX|CFG1_16BIT, CFG2_IR_ADJUST_HIGH, CFG3_NO_INT);
     Sensors.ISL29125.state = 1;
-    Serial.print("\r\nISL29125 Initialization Successful");
+    #ifdef DebugMode
+      Serial.print("\r\nISL29125 Initialization Successful");
+    #endif 
     return true;
   }
   else
   {
     Sensors.ISL29125.state = 0;
-    Serial.print("\r\nISL29125 Initialization Failed");
+    #ifdef DebugMode   
+      Serial.print("\r\nISL29125 Initialization Failed");
+    #endif 
     return false;
   }
 }
 
+/*******************************************************************************
+ * TCS34725_Config - Initialize TCS34725
+ * 
+ ******************************************************************************/
+bool TCS34725_Config(void)
+{
+  if (tcs.begin() == true)
+  {
+    Serial.println("Found sensor");
+
+    Sensors.ISL29125.state = 1;
+    #ifdef DebugMode 
+      Serial.print("\r\TCS34725 Initialization Successful");
+    #endif 
+    return true;
+  } 
+  else
+  {
+    Sensors.ISL29125.state = 0;
+  //  #ifdef DebugMode 
+      Serial.println("No TCS34725 found ... check your connections");
+  //  #endif 
+    
+    return false;
+  }
+}
 
 /*******************************************************************************
  * TLS2561_Config - Initialize TLS2561
@@ -1022,16 +1086,21 @@ bool TLS2561_Config(void)
     tsl.setGain(TSL2561_GAIN_16X);                  // 16x gain ... use in low light to boost sensitivity
     tsl.setTiming(TSL2561_INTEGRATIONTIME_402MS);   // 16-bit data but slowest conversions
     Sensors.TLS2561.state = 1;
-    Serial.print("\r\nTSL2561 Initialization Successful");
+    #ifdef DebugMode 
+      Serial.print("\r\nTSL2561 Initialization Successful");
+    #endif 
     return true;
   } 
   else
   {
     Sensors.TLS2561.state = 0;
-    Serial.print("\r\nTSL2561 Initialization Failed");
+    #ifdef DebugMode 
+      Serial.print("\r\nTSL2561 Initialization Failed");
+    #endif 
     return false;
   }
 }
+
 
 /*******************************************************************************
  * DHT22_Config - Initialize DHT22
@@ -1047,6 +1116,7 @@ void DHT22_Config(void)
   Read_DHT22(&(Sensors.DHT22_2));
 }
 
+
 /*******************************************************************************
  * DS18B20_Config - Initialize DS18B20
  * https://cdn.sparkfun.com/datasheets/Sensors/Temp/DS18B20.pdf
@@ -1055,15 +1125,17 @@ void DS18B20_Config(void)
 {
   // Start up the library
   sensors.begin();
+    
+  #ifdef DebugMode 
+    Serial.print("\r\nDS18B20 Found ");
+    Serial.print(sensors.getDeviceCount(), DEC); Serial.print(" devices, ");
 
-  Serial.print("\r\nDS18B20 Found ");
-  Serial.print(sensors.getDeviceCount(), DEC); Serial.print(" devices, ");
-
-  // report parasite power requirements
-  Serial.print("Parasite power is: "); 
-  if (sensors.isParasitePowerMode()) Serial.print("ON");
-  else Serial.print("OFF");
-
+    // report parasite power requirements
+    Serial.print("Parasite power is: "); 
+    if (sensors.isParasitePowerMode()) Serial.print("ON");
+    else Serial.print("OFF");
+  #endif 
+    
   // method 1: by index
   if (!sensors.getAddress(insideThermometer, 0)) Serial.print("Unable to find address for Device 0"); 
   if (!sensors.getAddress(outsideThermometer, 1)) Serial.print("Unable to find address for Device 1"); 
@@ -1087,24 +1159,18 @@ void DS18B20_Config(void)
  ******************************************************************************/
 void HX711_Config(void)
 {
-  Sensors.LoadCell_1.DOUT_pin = pinDOUT_LC1;
-  Sensors.LoadCell_1.PD_SCK_pin = pinPD_SCK_LC1;
-  Sensors.LoadCell_2.DOUT_pin = pinDOUT_LC2;
-  Sensors.LoadCell_2.PD_SCK_pin = pinPD_SCK_LC2;
-  Sensors.LoadCell_1.Gain = 128;
-  Sensors.LoadCell_2.Gain = 128;
+  Sensors.LoadCell.DOUT_pin = pinDOUT_LC;
+  Sensors.LoadCell.PD_SCK_pin = pinPD_SCK_LC;
+  Sensors.LoadCell.Gain = 128;
 
   // Set gain
-  lc_1.set_gain(Sensors.LoadCell_1.Gain);
-  lc_2.set_gain(Sensors.LoadCell_2.Gain);
+  LoadCell.set_gain(Sensors.LoadCell.Gain);
 
   // Dummy read
-  lc_1.read();
-  lc_2.read();
+  LoadCell.read();
   
   // Read to get status
-  Read_LoadCell(lc_1, &(Sensors.LoadCell_1));
-  Read_LoadCell(lc_2, &(Sensors.LoadCell_2));  
+  Read_LoadCell(LoadCell, &(Sensors.LoadCell));
   
 }
 
@@ -1115,7 +1181,12 @@ void HX711_Config(void)
 void Sensors_Init(void)
 {
   Sensors.counter = 0;
-  ISL29125_Config();
+  #ifdef ISL29125
+    ISL29125_Config();
+  #endif
+  #ifdef TCS34725
+    TCS34725_Config();
+  #endif
   TLS2561_Config();
   DHT22_Config();
   HX711_Config();
@@ -1168,6 +1239,45 @@ void Read_ISL29125(pISL29125 SensStruct)
   }
 }
 
+void Read_TCS34725(pISL29125 SensStruct)
+{
+  uint16_t clr,red, green, blue;
+  
+  // Restart configuration if needed
+  if (SensStruct->state == 0)
+  {
+    if (TCS34725_Config() == false)
+    {
+      I2C_TestLine();
+      SensStruct->Red = 0;
+      SensStruct->Green = 0;
+      SensStruct->Blue = 0;
+      return;
+    }
+    delay(20);
+  }
+   tcs.getRawData(&red, &green, &blue, &clr);
+  if (SensStruct->Red == 0xFFFF)
+  {
+    SensStruct->Red  = 0;
+    SensStruct->Green = 0;
+    SensStruct->Blue = 0;
+    I2C_TestLine();
+    SensStruct->state = 0;
+    Serial.print("\r\nISL29125: error");
+  }
+  else
+  {
+    SensStruct->Red  = red;
+    SensStruct->Green = green;
+    SensStruct->Blue = blue;
+    Serial.print("\r\nISL29125: ");
+    Serial.print("Red: "); Serial.print(SensStruct->Red); Serial.print(", ");
+    Serial.print("Green: "); Serial.print(SensStruct->Green); Serial.print(", ");
+    Serial.print("Blue: "); Serial.print(SensStruct->Blue);
+  }
+}
+
 void Read_TLS2561(pTLS2561 SensStruct)
 { 
   uint32_t lum, lux;
@@ -1178,6 +1288,7 @@ void Read_TLS2561(pTLS2561 SensStruct)
   {
     if (TLS2561_Config() == false)
     {
+      Serial.println("TLS2561_Config fail");
       I2C_TestLine();
       SensStruct->IR = 0;
       SensStruct->Full = 0;
@@ -1227,6 +1338,7 @@ void Read_DHT22(pDHT22 SensStruct)
     if (err == SimpleDHTErrSuccess) {
       break;} 
     delay(50); 
+    digitalWrite(BLE_STATE_PIN,1);
   }
   
   if (err != SimpleDHTErrSuccess) 
@@ -1235,19 +1347,23 @@ void Read_DHT22(pDHT22 SensStruct)
     SensStruct->Temperature_F = 0;
     SensStruct->Humidity_RH = 0;
     Serial.printf("\r\nDHT22 (pin %d): error %d", SensStruct->pin, err);
+
   }
   else
   {
     SensStruct->Temperature_C = temperature;
     SensStruct->Temperature_F = temperature * 1.8 + 32;
     SensStruct->Humidity_RH = humidity;
-    Serial.printf("\r\nDHT22 (pin %d):", SensStruct->pin);
-    Serial.print(" Temperature: "); 
-    Serial.print((float)SensStruct->Temperature_C); Serial.print("°C / ");
-    Serial.print((float)SensStruct->Temperature_F); Serial.print("°F");
-    Serial.print(" Humidity: "); 
-    Serial.print((float)SensStruct->Humidity_RH); Serial.print("RH%");
+    #ifdef DebugMode
+      Serial.printf("\r\nDHT22 (pin %d):", SensStruct->pin);
+      Serial.print(" Temperature: "); 
+      Serial.print((float)SensStruct->Temperature_C); Serial.print("°C / ");
+      Serial.print((float)SensStruct->Temperature_F); Serial.print("°F");
+      Serial.print(" Humidity: "); 
+      Serial.print((float)SensStruct->Humidity_RH); Serial.print("RH%");
+    #endif
   }
+  digitalWrite(BLE_STATE_PIN,0);
 }
 
 void Read_LoadCell(HX711 lcStruct, pLoadCell SensStruct)
@@ -1262,14 +1378,13 @@ void Read_LoadCell(HX711 lcStruct, pLoadCell SensStruct)
 void Read_DS18B20(void)
 {
   sensors.requestTemperatures();
-  //printData(insideThermometer);
+  printData(insideThermometer);
   printData(outsideThermometer);
 }
 
 // Read Battery Voltage in mV
 void Read_VBat(void)
 {
-  MCP23008_SetLevel(Sens_ENPin, 1);
   delay(200);
   
   float val = ((float)adc1_to_voltage(ADC1_CHANNEL_5, &characteristics)) * 5.4; // Rdiv 5.4
@@ -1296,7 +1411,7 @@ uint16_t ReadCO2_MG811(void)
 void Sensors_Read(void)
 {
   Sens_ON;
-  delay(100);
+  delay(200);
   
   Serial.print("\r\n\r\n*** Sensors Readings No "); Serial.print(Sensors.counter);
   Serial.print(" ***************************************");
@@ -1312,31 +1427,38 @@ void Sensors_Read(void)
   Read_DHT22(&(Sensors.DHT22_1));
   Read_DHT22(&(Sensors.DHT22_2));
 
-  // Read ISL29125
-  Read_ISL29125(&(Sensors.ISL29125));
+  // Read (RGB sensor)
+  #ifdef ISL29125
+    Read_ISL29125(&(Sensors.ISL29125));
+  #endif
+  #ifdef TCS34725
+    Read_TCS34725(&(Sensors.ISL29125));
+  #endif
 
-  // Read TLS2561
+  // Read TLS2561 (LUX sensor)
   Read_TLS2561(&(Sensors.TLS2561));
 
-  // Read HX711 (Load Cells)
-  Read_LoadCell(lc_1, &(Sensors.LoadCell_1));
-  Read_LoadCell(lc_2, &(Sensors.LoadCell_2));  
+  // Read HX711 (Load Cell)
+  Read_LoadCell(LoadCell, &(Sensors.LoadCell)); 
   
   // Read DS18B20
   Read_DS18B20();
 
-  // Read Analog (AIN1-AIN6) inputs, Rdiv = 2
+  // Read Analog (AIN1-AIN4) inputs, Rdiv = 2
   Sensors.AIN[0] = adc1_to_voltage(ADC1_CHANNEL_6, &characteristics) * 2;
   Sensors.AIN[1] = adc1_to_voltage(ADC1_CHANNEL_7, &characteristics) * 2;
   Sensors.AIN[2] = adc1_to_voltage(ADC1_CHANNEL_4, &characteristics) * 2;
   Sensors.AIN[3] = adc1_to_voltage(ADC1_CHANNEL_5, &characteristics) * 2;
   Sensors.AIN[4] = adc1_to_voltage(ADC1_CHANNEL_6, &characteristics) * 2;
 
-  Serial.print("\r\nAnalog pins: "); 
-  Serial.printf("AIN1: %dmV, ",Sensors.AIN[0]);
-  Serial.printf("AIN2: %dmV, ",Sensors.AIN[1]);
-  Serial.printf("AIN3: %dmV, ",Sensors.AIN[2]);
-  Serial.printf("AIN4: %dmV, ",Sensors.AIN[3]);
+  #ifdef DebugMode
+    Serial.print("\r\nAnalog pins: "); 
+    Serial.printf("AIN1: %dmV, ",Sensors.AIN[0]);
+    Serial.printf("AIN2: %dmV, ",Sensors.AIN[1]);
+    Serial.printf("AIN3: %dmV, ",Sensors.AIN[2]);
+    Serial.printf("AIN4: %dmV",Sensors.AIN[3]);
+  #endif
+  
 }
 
 
@@ -1351,6 +1473,8 @@ void SSD1306_Init(void)
   display.flipScreenVertically();
   display.setFont(ArialMT_Plain_10);
 }
+
+
 void drawImageDemo() 
 {
   // see http://blog.squix.org/2015/05/esp8266-nodemcu-how-to-create-xbm.html
@@ -1359,11 +1483,10 @@ void drawImageDemo()
 }
 
 
-
 /*******************************************************************************
- * Send_json - Send json message to server
+ * DataToJSON - saves data to SD card in Json format, and send to server
  ******************************************************************************/
-void Send_json(void)
+void DataToJSON(void)
 {
   //-----------------------------------------------------------------------
   // Build json
@@ -1399,34 +1522,15 @@ void Send_json(void)
   String STR_A4 = String("\"analog_4\":" + String(Sensors.AIN[3],DEC) + ",");
   String STR_GPIO1 = String("\"gpio_1\":" + String(Sensors.DS18B20_Temp_F,2) + ",");
   String STR_GPIO2 = String("\"gpio_2\":" + String(0) + ",");
-  String STR_I2C1 = String("\"i2c_1\":" + String(Sensors.LoadCell_1.raw,DEC) + ",");
-  String STR_I2C2 = String("\"i2c_2\":" + String(Sensors.LoadCell_2.raw,DEC) + ",");  
+  String STR_I2C1 = String("\"i2c_1\":" + String(Sensors.LoadCell.raw,DEC) + ",");
+  String STR_I2C2 = String("\"i2c_2\":" + String(Sensors.LoadCell.raw,DEC) + ",");  
   String STR_BAT = String("\"battery\":" + String(Sensors.BatVoltage,DEC)); 
   String STR_other = String("\"other\":{" + STR_A1 + STR_A2 + STR_A3 + STR_A4 + STR_GPIO1 + STR_GPIO2 + STR_I2C1 + STR_I2C2 + STR_BAT + "}");
  
-  String JSONMessage = String("{" + STR_hostname + STR_version + STR_now + STR_firm + STR_environment + STR_other + "}");
+  static String JSONMessage = String("{" + STR_hostname + STR_version + STR_now + STR_firm + STR_environment + STR_other + "}");
   //Serial.println(JSONMessage);  // check json: https://jsonlint.com/
 
 
-  //-----------------------------------------------------------------------
-  // POST json message to HTTP
-  uint8_t len = SysSettings.url.length()+1;
-  char httpServer[len]={0};
-  SysSettings.url.toCharArray(httpServer, len);
-  http.begin(httpServer);                             // Specify destination for HTTP request
-  http.addHeader("Content-Type", "application/json"); // Specify content-type header
-  Serial.print("\r\n\r\n*** Sending data to server: ");
-  int httpResponseCode = http.POST(JSONMessage);  
-  String response = http.getString();
-  Serial.print(response);
-  http.end();  // Free resources
-
-  if (response == "done") {
-    display.drawString(50, 50, "SERVER OK");}
-  else {
-    display.drawString(50, 50, "SERVER ERR");}
-  display.display();
-  
   //-----------------------------------------------------------------------
   // Save json to SD card
   if(SD.cardType() != CARD_NONE) {
@@ -1446,19 +1550,65 @@ void Send_json(void)
     }
     file.close();
   }
+
+
+  //-----------------------------------------------------------------------
+  // Connect to WiFi
+  uint8_t len1 = SysSettings.ssid.length()+1;
+  uint8_t len2 = SysSettings.password.length()+1;
+  char ssid[len1]={0};
+  char password[len2]={0};
+  SysSettings.ssid.toCharArray(ssid, len1);
+  SysSettings.password.toCharArray(password, len2);
+  WiFi.begin((const char*)ssid, (const char*)password); 
+  Serial.print("\r\n\r\n*** Connecting to WiFi");
+  for (uint8_t ConnectTimeOut=0; ConnectTimeOut<30 ;ConnectTimeOut++)
+  {
+    if(WiFi.status() == WL_CONNECTED) {
+      break;}
+    Serial.print(".");
+    delay(250);
+  }
+
+  //--- Send json if connected
+  if(WiFi.status() == WL_CONNECTED) 
+  {
+    display.drawString(0, 50, "WIFI OK");
+    display.display();  
+    Serial.print("connected");
+
+    // POST json message to HTTP
+    uint8_t len = SysSettings.url.length()+1;
+    char httpServer[len]={0};
+    SysSettings.url.toCharArray(httpServer, len);
+    http.begin(httpServer);                             // Specify destination for HTTP request
+    http.addHeader("Content-Type", "application/json"); // Specify content-type header
+    Serial.print("\r\n\r\n*** Sending data to server: ");
+    int httpResponseCode = http.POST(JSONMessage);  
+    String response = http.getString();
+    Serial.print(response);
+    http.end();  // Free resources
+    
+    if (response == "done") {
+      display.drawString(50, 50, "SERVER OK");}
+    else {
+      display.drawString(50, 50, "SERVER ERR");}
+    display.display();
+  }
+  else {
+    display.drawString(0, 50, "WIFI ERR");
+    display.display(); 
+    Serial.printf("error %d", WiFi.status());
+    }
+
+  //--- Disconnect WiFi (Erases SSID/password)
+  WiFi.disconnect(true);
 }
 
 
-
-
-
-
-
-
-
-
-
-
+/*******************************************************************************
+ * DS18B20 functions
+ ******************************************************************************/
 // function to print a device address
 void printAddress(DeviceAddress deviceAddress)
 {
@@ -1473,13 +1623,10 @@ void printAddress(DeviceAddress deviceAddress)
 void printTemperature(DeviceAddress deviceAddress)
 {
   float tempC = sensors.getTempC(deviceAddress);
-  float tempF = DallasTemperature::toFahrenheit(tempC);
-  Sensors.DS18B20_Temp_F = tempF;
-  
   Serial.print("Temperature: ");
   Serial.print(tempC);
   Serial.print("°C / ");
-  Serial.print(tempF);
+  Serial.print(DallasTemperature::toFahrenheit(tempC));
   Serial.print("°F");
 }
 // function to print a device's resolution
@@ -1518,7 +1665,6 @@ uint16_t ReadCO2_K30_uart(void)
   {
     if (Serial1.available()) {
       response[i] = Serial1.read();
-      //Serial.print(response[i]);Serial.print(" ");
     }
     /*if (millis() - t > 1000) {
       Serial.print("\r\nK30 CO2: error");
@@ -1531,17 +1677,18 @@ uint16_t ReadCO2_K30_uart(void)
     Serial.print("\r\nK30 CO2: error");}
   else {
     Serial.printf("\r\nK30 CO2: %d ppm", co2_value);}
-
+    
   return co2_value;
 }
 
-uint16_t ReadCO2_K30_i2c(void)
+
+/*uint16_t ReadCO2_K30_i2c(void)
 {
   int co2_value = 0;
   byte i = 0;
   uint8_t buffer[4] = {0};
   
-  Wire.beginTransmission(K30co2Addr); 
+  Wire.beginTransmission(K30co2_addr); 
   Wire.write(0x22);
   Wire.write(0x00);
   Wire.write(0x08);
@@ -1550,7 +1697,7 @@ uint16_t ReadCO2_K30_i2c(void)
     return 0;}
   delay(10); 
 
-  Wire.requestFrom(K30co2Addr, 4);
+  Wire.requestFrom(K30co2_addr, 4);
   delay(1);  
 
   while (Wire.available())
@@ -1568,5 +1715,5 @@ uint16_t ReadCO2_K30_i2c(void)
     return co2_value;
   else
     return 0;
-}
+}*/
 
