@@ -22,7 +22,7 @@
 #include <BLE2902.h>
 #include <bt.h>
 #include "SPI.h"
-#include "SD.h"
+//include "SD.h"
 #include "FS.h"
 
 /* Modified libraries */
@@ -32,6 +32,8 @@
 #include "src/Adafruit_MCP23008_library/Adafruit_MCP23008.h"
 #include "src/HX711/HX711.h"
 #include "src/SimpleDHT/SimpleDHT.h"
+#include "src/ESP32_SD/src/SD.h"
+
 /* User includes */
 #include "VarDef.h"
 #include "images.h"
@@ -232,8 +234,8 @@ void setup()
   Wire.setClock(I2C_speed); // Set I2C speed to 100KHz
 
     // Draw WiFi image
-//  drawImageDemo();
-//  display.display();
+  drawImageDemo();
+  display.display();
  
   // Configure sensors
   Sensors_Init();
