@@ -90,7 +90,6 @@ void Sensors_Read(void);
 void Read_DHT22(pDHT22 SensStruct);
 void Read_ISL29125(pISL29125 SensStruct);
 void Read_TLS2561(pTLS2561 SensStruct);
-void Read_DS18B20(void);
 void Read_LoadCell(HX711 lcStruct, pLoadCell SensStruct);
 void Read_VBat(void);
 void BLE_init(void);
@@ -104,6 +103,7 @@ void DecodeTextLine(char* line, uint8_t QLen);
 uint16_t ReadCO2_K30_uart(void);
 uint16_t ReadCO2_K30_i2c(void);
 uint16_t ReadCO2_MG811(void);
+float Read_DS18B20(void);
 void DisplayData(void);
 void I2C_Recovery(void);
 void I2C_TestLine(void);
@@ -212,20 +212,17 @@ void setup()
   GPIO_Config();
   ADC_Config();
 
+  /*
   pinMode(BLE_BRK_PIN,OUTPUT);
   pinMode(BLE_STATE_PIN,OUTPUT);
   pinMode(BLE_RX_PIN,INPUT);
   pinMode(BLE_TX_PIN,OUTPUT);
   digitalWrite(BLE_STATE_PIN,0);
   digitalWrite(BLE_TX_PIN,0);
-
-
-
+  */
   
   // Read Battery Voltage before Sensors Measurements
   Read_VBat();
-
-
   
   delay(500);
 
@@ -233,7 +230,7 @@ void setup()
   SSD1306_Init();           // Attention this function changing I2C speed to 700kHz
   Wire.setClock(I2C_speed); // Set I2C speed to 100KHz
 
-    // Draw WiFi image
+  // Draw WiFi image
   drawImageDemo();
   display.display();
  
@@ -1377,11 +1374,12 @@ void Read_LoadCell(HX711 lcStruct, pLoadCell SensStruct)
     Serial.printf("\r\nLoadCell (pins %d %d): ", SensStruct->DOUT_pin, SensStruct->PD_SCK_pin); Serial.print(SensStruct->raw);} 
 }
 
-void Read_DS18B20(void)
+float Read_DS18B20(void)
 {
   sensors.requestTemperatures();
   printData(insideThermometer);
-  printData(outsideThermometer);
+  float tempF = printData(outsideThermometer);
+  return tempF;
 }
 
 // Read Battery Voltage in mV
@@ -1444,7 +1442,7 @@ void Sensors_Read(void)
   Read_LoadCell(LoadCell, &(Sensors.LoadCell)); 
   
   // Read DS18B20
-  Read_DS18B20();
+  Sensors.DS18B20_Temp_F = Read_DS18B20();
 
   // Read Analog (AIN1-AIN4) inputs, Rdiv = 2
   Sensors.AIN[0] = adc1_to_voltage(ADC1_CHANNEL_6, &characteristics) * 2;
@@ -1529,9 +1527,10 @@ void DataToJSON(void)
   String STR_BAT = String("\"battery\":" + String(Sensors.BatVoltage,DEC)); 
   String STR_other = String("\"other\":{" + STR_A1 + STR_A2 + STR_A3 + STR_A4 + STR_GPIO1 + STR_GPIO2 + STR_I2C1 + STR_I2C2 + STR_BAT + "}");
  
-  static String JSONMessage = String("{" + STR_hostname + STR_version + STR_now + STR_firm + STR_environment + STR_other + "}");
+  String JSONMessage = String("{" + STR_hostname + STR_version + STR_now + STR_firm + STR_environment + STR_other + "}");
+  
+  //Serial.println("");
   //Serial.println(JSONMessage);  // check json: https://jsonlint.com/
-
 
   //-----------------------------------------------------------------------
   // Save json to SD card
@@ -1622,14 +1621,17 @@ void printAddress(DeviceAddress deviceAddress)
   }
 }
 // function to print the temperature for a device
-void printTemperature(DeviceAddress deviceAddress)
+float printTemperature(DeviceAddress deviceAddress)
 {
   float tempC = sensors.getTempC(deviceAddress);
+  float tempF = DallasTemperature::toFahrenheit(tempC);
   Serial.print("Temperature: ");
   Serial.print(tempC);
   Serial.print("°C / ");
-  Serial.print(DallasTemperature::toFahrenheit(tempC));
+  Serial.print(tempF);
   Serial.print("°F");
+
+  return tempF;
 }
 // function to print a device's resolution
 void printResolution(DeviceAddress deviceAddress)
@@ -1638,12 +1640,12 @@ void printResolution(DeviceAddress deviceAddress)
   Serial.print(sensors.getResolution(deviceAddress));  
 }
 // main function to print information about a device
-void printData(DeviceAddress deviceAddress)
+float printData(DeviceAddress deviceAddress)
 {
   Serial.print("\r\nDS18B20 (");
   printAddress(deviceAddress);
   Serial.print(") ");
-  printTemperature(deviceAddress);
+  return printTemperature(deviceAddress);
 }
 
 
