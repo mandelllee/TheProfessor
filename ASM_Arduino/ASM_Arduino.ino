@@ -1,9 +1,9 @@
 /*  ASM - Atmospheric Sensor Module
  *  Revision 2.0
  * */
-
+ 
+/*** Standard Libraries ***/
 #include <string.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <WiFi.h>
@@ -25,7 +25,7 @@
 //include "SD.h"
 #include "FS.h"
 
-/* Modified libraries */
+/*** Modified Libraries ***/
 #include "src/Adafruit_TCS34725-master/Adafruit_TCS34725.h"
 #include "src/TSL2561_Arduino_Library/TSL2561.h"
 #include "src/SparkFun_ISL29125_Breakout/src/SparkFunISL29125.h"
@@ -34,12 +34,11 @@
 #include "src/SimpleDHT/SimpleDHT.h"
 #include "src/ESP32_SD/src/SD.h"
 
-/* User includes */
+/*** User Includes ***/
 #include "VarDef.h"
 #include "images.h"
 
-
-/* Global variables ********************************************************/
+/*** Global Variables ***/
 esp_adc_cal_characteristics_t characteristics;
 SFE_ISL29125 RGB_sensor;
 Sensors_t Sensors;
@@ -63,7 +62,6 @@ bool Sensors_ReadFlag = false;
 volatile uint8_t BLE_Status = 0;
 volatile uint32_t BLE_TimeOutCounter = 0;
 volatile uint32_t Sensors_ReadCounter = 0;
-
 uint8_t cardType;
 uint64_t cardSize;
 SPIClass &spi = SPI;
@@ -73,8 +71,7 @@ HardwareSerial Serial1(1);
 char SerialBuffer[200];
 uint8_t SerialBufferCnt=0;
 
-
-/* Functions prototype *****************************************************/
+/*** Functions prototype ***/
 void GPIO_Config(void);
 void ADC_Config(void);
 void MCP23008_Config(void);
@@ -109,70 +106,29 @@ void I2C_Recovery(void);
 void I2C_TestLine(void);
 void MCP23008_SetLevel(uint8_t pin, uint8_t level);
 
-
-/*******************************************************************************
- * BLE Callbacks
- ******************************************************************************/
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      #ifdef DebugMode
-        Serial.print("\r\n*** BLE connected");
-      #endif
-      BLE_TimeOutCounter = 0;
-      deviceConnected = true;
-    };
-
-    void onDisconnect(BLEServer* pServer) {
-      #ifdef DebugMode
-        Serial.print("\r\n*** BLE disconnected");
-      #endif
-      deviceConnected = false;
-    }
-};
-class MyCallbacks: public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) {
-      #ifdef DebugMode
-        Serial.print("\r\n*** BLE received data");
-      #endif
-      BLE_TimeOutCounter = 0;
-      std::string rxValue = pCharacteristic->getValue();
-      if (rxValue.length() > 0) 
-        DecodeMSG(rxValue);//BLE_DecodeFlag = true;
-    }
-};
-
-
 /*******************************************************************************
  * Time interrupt every second
  ******************************************************************************/
-void IRAM_ATTR onTimer()
-{
+void IRAM_ATTR onTimer(){
   Sensors_ReadCounter++;
-    
   // Read Sensors every xx minutes
-  if (Sensors_ReadCounter >= SysSettings.Meas_RepeatTime_s)
-  {
+  if (Sensors_ReadCounter >= SysSettings.Meas_RepeatTime_s) {
     Sensors_ReadFlag = true;
     Sensors_ReadCounter = 0;
   }
-  
-/*  // Turn OFF BLE after xx seconds
-  if (BLE_Status)
-  {
-    BLE_TimeOutCounter++;
-    if (BLE_TimeOutCounter == SysSettings.BLE_Timout_s)
-      BLE_disable();
-  }*/
 }
 
+void initializeWiFi(){
+  uint8_t len1 = SysSettings.ssid.length()+1;
+  uint8_t len2 = SysSettings.password.length()+1;
+  char ssid[len1]={0};
+  char password[len2]={0};
+  SysSettings.ssid.toCharArray(ssid, len1);
+  SysSettings.password.toCharArray(password, len2);
+}
 
-
-/*******************************************************************************
- * Setup function
- * 
- ******************************************************************************/
-void setup() 
-{
+/*** Setup Function ***/
+void setup() {
   // Initialize UART for terminal (COM PORT)
   Serial.begin(115200);
   
@@ -183,7 +139,7 @@ void setup()
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(I2C_speed); // Set I2C speed to 100KHz
 
-    // Initialize Port Expander
+  // Initialize Port Expander
   MCP23008_Config();
   // Enable Sens_EN and LCD_EN
   Sens_ON;
@@ -212,15 +168,6 @@ void setup()
   GPIO_Config();
   ADC_Config();
 
-  /*
-  pinMode(BLE_BRK_PIN,OUTPUT);
-  pinMode(BLE_STATE_PIN,OUTPUT);
-  pinMode(BLE_RX_PIN,INPUT);
-  pinMode(BLE_TX_PIN,OUTPUT);
-  digitalWrite(BLE_STATE_PIN,0);
-  digitalWrite(BLE_TX_PIN,0);
-  */
-  
   // Read Battery Voltage before Sensors Measurements
   Read_VBat();
   
@@ -237,10 +184,6 @@ void setup()
   // Configure sensors
   Sensors_Init();
   
-  // Initialize BLE and start
-  //BLE_init();
-  //BLE_enable();
-  
   // Configure and start timer
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
@@ -252,27 +195,12 @@ void setup()
   Sens_ON;
 }
 
-
-
-/*******************************************************************************
- * Main function
- * 
- ******************************************************************************/
-void loop() 
-{
+/*** Main Function ***/
+void loop() {
   static uint8_t a=1,b=0;
-/*  //-----------------------------------------------------------------------
-  // Decode BLE messages
-  if (BLE_DecodeFlag == true)
-  {
-    //BLE_decode(rxValue);
-    BLE_DecodeFlag = false;
-  }*/
-
   //-----------------------------------------------------------------------
   // Read Sensors and send data in json via WiFi
-  if (Sensors_ReadFlag == true)
-  {
+  if (Sensors_ReadFlag == true) {
     display.clear();
   
     // Turn ON test LED
@@ -292,8 +220,6 @@ void loop()
     // Reset Sensors_ReadFlag
     Sensors_ReadFlag = false;
   }
-
-
   //-----------------------------------------------------------------------
   // COM PORT Data Receive
   if (Serial.available() > 0)
@@ -312,7 +238,6 @@ void loop()
     }
   }
 }
-
 
 /*******************************************************************************
  * DisplayData - Display sensors data
@@ -340,7 +265,6 @@ void DisplayData(void)
 
   display.display();
 }
-
 
 /*******************************************************************************
  * Load_SysSettings - Load system parameters
@@ -458,16 +382,12 @@ void I2C_TestLine(void)
  ******************************************************************************/
 void I2C_Recovery(void)
 {
-
  Serial.print("\r\n*** I2C recovery begin");
- 
   // Stop I2C
   //Wire.end();
-
   // Set gpio mode
   pinMode(I2C_SCL_PIN, OUTPUT);
   //pinMode(Sens_SDA_PIN, INPUT);
-
   // Send clock for recovery
   for (uint8_t cycle=0; cycle<16; cycle++)
   {
@@ -595,330 +515,6 @@ void DecodeTextLine(char* line, uint8_t QLen)
       #endif
     }
   }
-}
-
-
-/*******************************************************************************
- * BLE_enable and BLE_disable
- ******************************************************************************/
-void BLE_enable(void)
-{
-  #ifdef DebugMode
-    Serial.print("\r\n*** BLE enable"); 
-  #endif
-  esp_bt_controller_enable(ESP_BT_MODE_BTDM);
-  delay(100);
-  pServer->getAdvertising()->start(); 
-  BLE_Status = 1;
-}
-void BLE_disable(void)
-{
-  #ifdef DebugMode
-    Serial.print("\r\n*** BLE disable");  
-  #endif
-  pServer->getAdvertising()->stop();  
-  esp_bt_controller_disable();
-  BLE_Status = 0;
-}
-
-
-/*******************************************************************************
- * DecodeMSG - Decode received message
- ******************************************************************************/
-void DecodeMSG(std::string msg)
-{
-//  char const* p = msg.data();
-//  const uint8_t QLen = 20;    // max length of SSID, password or hostname
-//
-//  /* Get (SG) and set (SS) SSID -----------------------------------------*/
-//  if (strstr(p,"SG"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      pCharacteristic->setValue(SysSettings.ssid.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.print("\r\nBLE get SSID");
-//  }
-//  else if (strstr(p,"SS:"))
-//  {
-//    char TempStr[QLen];
-//    sscanf(p,"SS:%s",&TempStr);
-//    if (TempStr[1] != NULL)
-//    {
-//      SysSettings.ssid = TempStr;
-//      preferences.begin("my-app", false);
-//      preferences.putString("ssid", SysSettings.ssid);
-//      preferences.end();
-//      Serial.print("\r\nBLE set SSID: "); Serial.print(TempStr);
-//    } 
-//  }
-//
-//
-//  /* Get (PG) and set (PS) WiFi password --------------------------------*/
-//  else if (strstr(p,"PG"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      pCharacteristic->setValue(SysSettings.password.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.print("\r\nBLE get password");
-//  }
-//  else if (strstr(p,"PS:"))
-//  {
-//    char TempStr[QLen];
-//    sscanf(p,"PS:%s",&TempStr);
-//    if (TempStr[1] != NULL)
-//    {
-//      SysSettings.password = TempStr;
-//      preferences.begin("my-app", false);
-//      preferences.putString("password", SysSettings.password);
-//      preferences.end();
-//      Serial.print("\r\nBLE set password: "); Serial.print(TempStr);
-//    } 
-//  }
-//
-//  
-//  /* Get (HG) and set (HS) Hostname -------------------------------------*/
-//  else if (strstr(p,"HG"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      pCharacteristic->setValue(SysSettings.hostname.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.print("\r\nBLE get hostname");
-//  }
-//  else if (strstr(p,"HS:"))
-//  {
-//    char TempStr[QLen];
-//    sscanf(p,"HS:%s",&TempStr);
-//    if (TempStr[1] != NULL)
-//    {
-//      SysSettings.hostname = TempStr;
-//      preferences.begin("my-app", false);
-//      preferences.putString("hostname", SysSettings.hostname);
-//      preferences.end();
-//      Serial.print("\r\nBLE set hostname: "); Serial.print(TempStr);
-//    } 
-//  }
-//
-//
-//  /* Get (MRTG) and set (MRTS) measurments repeatition time -------------*/
-//  else if (strstr(p,"MRTG"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      String TempStr = String(SysSettings.Meas_RepeatTime_min);
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.print("\r\nBLE get Meas_RepeatTime_min");
-//  }
-//  else if (strstr(p,"MRTS:"))
-//  {
-//    uint16_t TempVal=0;
-//    sscanf(p,"MRTS:%d",&TempVal);
-//    if (TempVal > 0)
-//    {
-//      SysSettings.Meas_RepeatTime_min = TempVal;
-//      preferences.begin("my-app", false);
-//      preferences.putUInt("MeasRepeat", SysSettings.Meas_RepeatTime_min);
-//      preferences.end();
-//      Serial.printf("\r\nBLE set Meas_RepeatTime_min: %d", SysSettings.Meas_RepeatTime_min);
-//    } 
-//  }
-//
-//
-//  /* Get (BSTG) and set (BSTS) Bluetooth sleep time ---------------------*/
-//  else if (strstr(p,"BSTG"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      String TempStr = String(SysSettings.BLE_SleepTime_min);
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.print("\r\nBLE get BLE_SleepTime_min");
-//  }
-//  else if (strstr(p,"BSTS:"))
-//  {
-//    uint16_t TempVal=0;
-//    sscanf(p,"BSTS:%d",&TempVal);
-//    if (TempVal > 0)
-//    {
-//      SysSettings.BLE_SleepTime_min = TempVal;
-//      preferences.begin("my-app", false);
-//      preferences.putUInt("BLEsleep", SysSettings.BLE_SleepTime_min);
-//      preferences.end();
-//      Serial.printf("\r\nBLE set BLE_SleepTime_min: %d", SysSettings.BLE_SleepTime_min);
-//    } 
-//  }
-//
-//  
-//  /* Get (BATG) and set (BATS) Bluetooth active time --------------------*/
-//  else if (strstr(p,"BATG"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      String TempStr = String(SysSettings.BLE_ActiveTime_sec);
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.print("\r\nBLE get BLE_ActiveTime_sec");
-//  }
-//  else if (strstr(p,"BATS:"))
-//  {
-//    uint16_t TempVal=0;
-//    sscanf(p,"BATS:%d",&TempVal);
-//    if (TempVal > 10)
-//    {
-//      SysSettings.BLE_ActiveTime_sec = TempVal;
-//      preferences.begin("my-app", false);
-//      preferences.putUInt("BLEactive", SysSettings.BLE_ActiveTime_sec);
-//      preferences.end();
-//      Serial.printf("\r\nBLE set BLE_ActiveTime_sec: %d", SysSettings.BLE_ActiveTime_sec);
-//    } 
-//  }
-//
-//
-//  /* Get (CF1G) and set (CF1S) LoadCell_1 calibrationfactor factor ------*/
-//  else if (strstr(p,"CF1G"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      String TempStr = String( (SysSettings.LoadCell_calibration_factor_1), 3);
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//  }
-//  else if (strstr(p,"CF1S:"))
-//  {
-//    float TempVal=0.0;
-//    sscanf(p,"CF1S:%f",&TempVal);
-//    if (TempVal > 0)
-//    {
-//      SysSettings.LoadCell_calibration_factor_1 = TempVal;
-//      Sensors.LoadCell_1.calibration_factor = SysSettings.LoadCell_calibration_factor_1;  
-//      lc_1.set_scale(Sensors.LoadCell_1.calibration_factor);
-//      preferences.begin("my-app", false);
-//      preferences.putFloat("Calib1", SysSettings.LoadCell_calibration_factor_1);
-//      preferences.end();
-//      Serial.printf("\r\nLoadCell_1 calibration factor: %f", SysSettings.LoadCell_calibration_factor_1);
-//    } 
-//  }
-//
-//
-//  /* Get (CF2G) and set (CF2S) LoadCell_2 calibrationfactor factor ------*/
-//  else if (strstr(p,"CF2G"))
-//  {
-//    if (deviceConnected) 
-//    {
-//      String TempStr = String( (SysSettings.LoadCell_calibration_factor_2), 3);
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//  }
-//  else if (strstr(p,"CF2S:"))
-//  {
-//    float TempVal=0.0;
-//    sscanf(p,"CF2S:%f",&TempVal);
-//    if (TempVal > 0)
-//    {
-//      SysSettings.LoadCell_calibration_factor_2 = TempVal;
-//      Sensors.LoadCell_2.calibration_factor = SysSettings.LoadCell_calibration_factor_2;  
-//      lc_2.set_scale(Sensors.LoadCell_2.calibration_factor);
-//      preferences.begin("my-app", false);
-//      preferences.putFloat("Calib2", SysSettings.LoadCell_calibration_factor_2);
-//      preferences.end();
-//      Serial.printf("\r\nLoadCell_2 calibration factor: %f", SysSettings.LoadCell_calibration_factor_2);
-//    } 
-//  }
-//
-//
-//  /* Tare LoadCell_1 (TLC1) and LoadCell_2 (TLC2) to zero factor ---------*/
-//  else if (strstr(p,"TLC1"))
-//  {
-//    LoadCell_tare(lc_1, &(Sensors.LoadCell_1));
-//    if (deviceConnected) 
-//    {
-//      String TempStr = "Tared LC1";
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//  }
-//  else if (strstr(p,"TLC2"))
-//  {
-//    LoadCell_tare(lc_2, &(Sensors.LoadCell_2));
-//    if (deviceConnected) 
-//    {
-//      String TempStr = "Tared LC2";
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//  } 
-//
-//  /* Reset LoadCell_1 (ZF1R) and LoadCell_2 (ZF2R) zero factor -----------*/
-//  else if (strstr(p,"ZF1R"))
-//  {
-//    Sensors.LoadCell_1.zero_factor = 0;
-//    SysSettings.LoadCell_zero_factor_1 = 0;
-//    lc_1.set_offset(Sensors.LoadCell_1.zero_factor);
-//    preferences.begin("my-app", false);
-//    preferences.putLong("Offset1", SysSettings.LoadCell_zero_factor_1);
-//    preferences.end();
-//    if (deviceConnected) 
-//    {
-//      String TempStr = "LC1 Zero factor 0";
-//      pCharacteristic->setValue(TempStr.c_str());
-//      pCharacteristic->notify();
-//    }
-//    Serial.printf("\r\nLoadCell_1 zero factor: "); Serial.print(SysSettings.LoadCell_zero_factor_1);
-//  }
-//    else if (strstr(p,"ZF2R"))
-//    {
-//      Sensors.LoadCell_2.zero_factor = 0;
-//      SysSettings.LoadCell_zero_factor_2 = 0;
-//      lc_2.set_offset(Sensors.LoadCell_2.zero_factor);
-//      preferences.begin("my-app", false);
-//      preferences.putLong("Offset2", SysSettings.LoadCell_zero_factor_2);
-//      preferences.end();
-//      if (deviceConnected) 
-//      {
-//        String TempStr = "LC2 Zero factor 0";
-//        pCharacteristic->setValue(TempStr.c_str());
-//        pCharacteristic->notify();
-//      }
-//      Serial.printf("\r\nLoadCell_2 zero factor: "); Serial.print(SysSettings.LoadCell_zero_factor_2);
-//    }
-}
-
-
-void BLE_init(void)
-{
-  // Create the BLE Device
-  BLEDevice::init("ESP32DEV");
-
-  // Create the BLE Server
-  pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-
-  // Create the BLE Service
-  pService = pServer->createService(SERVICE_UUID);
-  
-  // Create a BLE Characteristic
-  pCharacteristic = pService->createCharacteristic(
-                      CHARACTERISTIC_UUID_TX,
-                      BLECharacteristic::PROPERTY_NOTIFY);                
-  pCharacteristic->addDescriptor(new BLE2902());
-  pCharacteristic = pService->createCharacteristic(
-                                         CHARACTERISTIC_UUID_RX,
-                                         BLECharacteristic::PROPERTY_WRITE);
-  pCharacteristic->setCallbacks(new MyCallbacks());
-
-  // Start the service 
-  pService->start();                  
 }
 
 
@@ -1552,7 +1148,7 @@ void DataToJSON(void)
     file.close();
   }
 
-
+/*
   //-----------------------------------------------------------------------
   // Connect to WiFi
   uint8_t len1 = SysSettings.ssid.length()+1;
@@ -1563,10 +1159,11 @@ void DataToJSON(void)
   SysSettings.password.toCharArray(password, len2);
   WiFi.begin((const char*)ssid, (const char*)password); 
   Serial.print("\r\n\r\n*** Connecting to WiFi");
-  for (uint8_t ConnectTimeOut=0; ConnectTimeOut<30 ;ConnectTimeOut++)
+  for (uint8_t ConnectTimeOut=0; ConnectTimeOut<30; ConnectTimeOut++)
   {
     if(WiFi.status() == WL_CONNECTED) {
-      break;}
+      break;
+    }
     Serial.print(".");
     delay(250);
   }
@@ -1604,6 +1201,8 @@ void DataToJSON(void)
 
   //--- Disconnect WiFi (Erases SSID/password)
   WiFi.disconnect(true);
+
+  */
 }
 
 
@@ -1648,7 +1247,6 @@ float printData(DeviceAddress deviceAddress)
   return printTemperature(deviceAddress);
 }
 
-
 /*******************************************************************************
  * ReadCO2_K30_uart - 
  ******************************************************************************/
@@ -1684,40 +1282,3 @@ uint16_t ReadCO2_K30_uart(void)
     
   return co2_value;
 }
-
-
-/*uint16_t ReadCO2_K30_i2c(void)
-{
-  int co2_value = 0;
-  byte i = 0;
-  uint8_t buffer[4] = {0};
-  
-  Wire.beginTransmission(K30co2_addr); 
-  Wire.write(0x22);
-  Wire.write(0x00);
-  Wire.write(0x08);
-  Wire.write(0x2A);
-  if (Wire.endTransmission(true) != 0){
-    return 0;}
-  delay(10); 
-
-  Wire.requestFrom(K30co2_addr, 4);
-  delay(1);  
-
-  while (Wire.available())
-  {
-    buffer[i] = Wire.read();
-    i++;
-  }
-  
-  co2_value |= buffer[1] & 0xFF;
-  co2_value = co2_value << 8;
-  co2_value |= buffer[2] & 0xFF;
-  uint8_t sum = buffer[0] + buffer[1] + buffer[2];
-
-  if (sum == buffer[3])
-    return co2_value;
-  else
-    return 0;
-}*/
-
