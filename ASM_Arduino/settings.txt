@@ -1,5 +1,5 @@
-ssid: XelaXer
-password: x2e3l2a3
+ssid: 
+password: 
 hostname: ESP32DEV
 url: http://api-quadroponic.rhcloud.com/v1/record/sensordata
 Meas_Repeat_s: 30

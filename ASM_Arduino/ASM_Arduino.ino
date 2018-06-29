@@ -118,13 +118,33 @@ void IRAM_ATTR onTimer(){
   }
 }
 
-void initializeWiFi(){
+void connectToWiFi(){
   uint8_t len1 = SysSettings.ssid.length()+1;
   uint8_t len2 = SysSettings.password.length()+1;
   char ssid[len1]={0};
   char password[len2]={0};
   SysSettings.ssid.toCharArray(ssid, len1);
   SysSettings.password.toCharArray(password, len2);
+  WiFi.begin((const char*)ssid, (const char*)password); 
+  Serial.print("\r\n\r\n*** Connecting to WiFi");
+  for (uint8_t ConnectTimeOut=0; ConnectTimeOut<30; ConnectTimeOut++) {
+    if(WiFi.status() == WL_CONNECTED) {
+      Serial.print("WiFi Successfully Connected");
+      break;
+    }
+    Serial.print(".");
+    delay(250);
+  }
+}
+
+void attemptReConnect(){
+  uint8_t len1 = SysSettings.ssid.length()+1;
+  uint8_t len2 = SysSettings.password.length()+1;
+  char ssid[len1]={0};
+  char password[len2]={0};
+  SysSettings.ssid.toCharArray(ssid, len1);
+  SysSettings.password.toCharArray(password, len2);
+  WiFi.begin((const char*)ssid, (const char*)password);
 }
 
 /*** Setup Function ***/
@@ -193,6 +213,8 @@ void setup() {
   // Turn OFF test LED
   gpio_set_level(GPIO_NUM_2,0);
   Sens_ON;
+
+  connectToWiFi();
 }
 
 /*** Main Function ***/
@@ -237,6 +259,16 @@ void loop() {
       }
     }
   }
+  //-----------------------------------------------------------------------
+  // WiFi Check
+  if(WiFi.status() != WL_CONNECTED) {
+    attemptReConnect();
+    if(WiFi.status() == WL_CONNECTED) {
+      Serial.print("WiFi Successfully Connected");
+    }
+  }
+  
+  
 }
 
 /*******************************************************************************
@@ -1054,7 +1086,6 @@ void Sensors_Read(void)
     Serial.printf("AIN3: %dmV, ",Sensors.AIN[2]);
     Serial.printf("AIN4: %dmV",Sensors.AIN[3]);
   #endif
-  
 }
 
 
@@ -1148,26 +1179,8 @@ void DataToJSON(void)
     file.close();
   }
 
-/*
-  //-----------------------------------------------------------------------
-  // Connect to WiFi
-  uint8_t len1 = SysSettings.ssid.length()+1;
-  uint8_t len2 = SysSettings.password.length()+1;
-  char ssid[len1]={0};
-  char password[len2]={0};
-  SysSettings.ssid.toCharArray(ssid, len1);
-  SysSettings.password.toCharArray(password, len2);
-  WiFi.begin((const char*)ssid, (const char*)password); 
-  Serial.print("\r\n\r\n*** Connecting to WiFi");
-  for (uint8_t ConnectTimeOut=0; ConnectTimeOut<30; ConnectTimeOut++)
-  {
-    if(WiFi.status() == WL_CONNECTED) {
-      break;
-    }
-    Serial.print(".");
-    delay(250);
-  }
 
+ 
   //--- Send json if connected
   if(WiFi.status() == WL_CONNECTED) 
   {
@@ -1200,9 +1213,9 @@ void DataToJSON(void)
     }
 
   //--- Disconnect WiFi (Erases SSID/password)
-  WiFi.disconnect(true);
+  //WiFi.disconnect(true);
 
-  */
+  
 }
 
 
